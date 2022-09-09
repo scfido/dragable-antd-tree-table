@@ -15,6 +15,14 @@ const columns: ColumnsType<ITableItem> = [
   {
     title: 'ID',
     dataIndex: 'id',
+    onCell: (record, rowIndex) => {
+      const attr = {
+        rowIndex,
+        dragHandler: true,
+        record
+      };
+      return attr as IDraggableCellProps;
+    }
   },
 
   // {
@@ -176,11 +184,17 @@ const toTree = (data: ITableItem[]) => {
 }
 //#endregion
 
-interface DraggableBodyRowProps extends React.HTMLAttributes<HTMLTableRowElement> {
+interface IDraggableBodyRowProps extends React.HTMLAttributes<HTMLTableRowElement> {
   index: number;
   moveRow: (dragIndex: number, hoverIndex: number) => void;
 }
 
+interface IDraggableCellProps extends React.HTMLAttributes<HTMLTableCellElement> {
+  rowIndex: number;
+  ref: any;
+  dragHandler: boolean;
+  record: ITableItem;
+}
 interface DragItem {
   index: number
   id: string
@@ -224,6 +238,22 @@ function getMovePosition(ref: React.RefObject<HTMLTableRowElement>, monitor: Dro
     return MovePosition.After;
 }
 
+
+function getDropClassName(moveState: MovePosition) {
+  switch (moveState) {
+    case MovePosition.Before:
+      return " drop-over-upward";
+
+    case MovePosition.Child:
+      return " drop-over-child";
+
+    case MovePosition.After:
+      return " drop-over-downward";
+
+    default:
+      return "";
+  }
+}
 const type = 'DraggableBodyRow';
 
 const DraggableBodyRow = ({
@@ -232,61 +262,15 @@ const DraggableBodyRow = ({
   className,
   style,
   ...restProps
-}: DraggableBodyRowProps) => {
+}: IDraggableBodyRowProps) => {
   const ref = useRef<HTMLTableRowElement>(null);
   const [moveState, setMoveState] = useState(MovePosition.Unkown);
 
-  const [{ isOver, dropClassName }, drop] = useDrop<DragItem, void, { isOver: boolean, dropClassName: string }>({
+  const [{ isOver }, drop] = useDrop<DragItem, void, { isOver: boolean }>({
     accept: type,
     collect: monitor => {
-
-      // Get pixels to the top
-      console.log(monitor.getClientOffset())
-
-
-      // if (!ref.current) {
-      //   return {};
-      // }
-      const { index: dragIndex } = monitor.getItem() || {};
-      // if (dragIndex === index) {
-      //   return {};
-      // }
-
-      // Determine rectangle on screen
-      const hoverBoundingRect = ref.current?.getBoundingClientRect()
-      if (!hoverBoundingRect)
-        return {};
-
-      // Get vertical middle
-      const hoverMiddleY =
-        (hoverBoundingRect.bottom - hoverBoundingRect.top) / 2
-
-      // Determine mouse position
-
-      const clientOffset = monitor.getClientOffset()
-      if (!clientOffset)
-        return {};
-
-      // Get pixels to the top
-      const hoverClientY = (clientOffset as XYCoord).y - hoverBoundingRect.top
-
-      // Only perform the move when the mouse has crossed half of the items height
-      // When dragging downwards, only move when the cursor is below 50%
-      // When dragging upwards, only move when the cursor is above 50%
-
-      // Dragging downwards
-      if (hoverClientY > hoverMiddleY - 10 && hoverClientY < hoverMiddleY + 10) {
-        return {
-          isOver: monitor.isOver(),
-          dropClassName: ' drop-over-child',
-        };
-      }
-
-      console.log("hoverClientY:", hoverClientY, " hoverMiddleY:", hoverMiddleY)
-
       return {
-        isOver: monitor.isOver(),
-        dropClassName: dragIndex < index ? ' drop-over-downward' : ' drop-over-upward',
+        isOver: monitor.isOver()
       };
     },
     hover: (item, monitor) => {
@@ -298,47 +282,58 @@ const DraggableBodyRow = ({
     },
   });
 
-  const [, drag] = useDrag({
+  const [, drag, preview] = useDrag({
     type,
     item: { index },
     collect: monitor => ({
       isDragging: monitor.isDragging(),
     }),
   });
-  drop(drag(ref));
 
-  let dropCss = "";
-  switch (moveState) {
-    case MovePosition.Before:
-      dropCss = " drop-over-upward"
-      break;
+  preview(ref)
+  drop(ref);
+  const dragRef = useRef<HTMLDivElement>(null);
+  restProps.children[0].props.record.dragRef = dragRef
+  drag(dragRef)
 
-    case MovePosition.Child:
-      dropCss = " drop-over-child"
-      break;
-
-    case MovePosition.After:
-      dropCss = " drop-over-downward"
-      break;
-
-    default:
-      dropCss = "";
-      break;
-  }
-
-  console.log("dropCss:", dropCss, "isOver:", isOver)
-
+  const dropClassName = getDropClassName(moveState);
   return (
     <tr
       ref={ref}
-      // className={`${className}${isOver ? dropClassName : ''}`}
-      className={`${className}${isOver ? dropCss : ''}`}
-      style={{ cursor: 'move', ...style }}
+      className={`${className}${isOver ? dropClassName : ''}`}
+      style={style}
+      // style={{ cursor: 'move', ...style }}
       {...restProps}
     />
   );
 };
 
+
+const DragHanlderCell = (props: IDraggableCellProps) => {
+  const {
+    dragHandler,
+    rowIndex,
+    record,
+    children,
+    ...restProps
+  } = props;
+
+  if (dragHandler)
+    return (
+      <td
+        {...restProps}
+      >
+        <div ref={record.dragRef} className="drag-handle" ></div>
+        {children}
+      </td>
+    );
+  else
+    return (<td
+      children={children}
+      {...restProps}
+    />);
+
+}
 // 表格
 export default function DragableTreeTable() {
 
@@ -347,6 +342,7 @@ export default function DragableTreeTable() {
   const components = {
     body: {
       row: DraggableBodyRow,
+      cell: DragHanlderCell,
     },
   };
 
@@ -378,8 +374,9 @@ export default function DragableTreeTable() {
             index,
             moveRow,
           };
-          return attr as React.HTMLAttributes<any>;
+          return attr as IDraggableBodyRowProps;
         }}
+
       />
     </DndProvider>
 
