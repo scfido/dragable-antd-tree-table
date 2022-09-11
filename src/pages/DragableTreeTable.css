@@ -1,0 +1,13 @@
+tr.drop-over-downward td {
+    background-color: rgb(255, 244, 191);
+    border-bottom: 4px dashed rgb(253, 193, 12);
+}
+
+tr.drop-over-upward td {
+    background-color: rgb(255, 244, 191);
+    border-top: 4px dashed rgb(253, 193, 12);
+}
+
+tr.drop-over-child td {
+    background-color: rgb(255, 227, 87);
+}

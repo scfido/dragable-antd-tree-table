@@ -1,13 +1,19 @@
-import React, { useCallback, useRef, useState } from 'react'
-import { Table, Card, Form } from 'antd';
+import React, { CSSProperties, ReactNode, useCallback, useRef, useState } from 'react'
+import { Table } from 'antd';
 import type { XYCoord, Identifier } from 'dnd-core';
 import { DndProvider, DropTargetMonitor, useDrag, useDrop } from 'react-dnd';
 import { HTML5Backend } from 'react-dnd-html5-backend';
 import update from 'immutability-helper';
 import "antd/dist/antd.css";
-import "./docs.css";
+import "./DragableTreeTable.css";
 import { ColumnsType } from 'antd/es/table';
-let dragingIndex = -1;
+import cloneDeep from 'lodash.clonedeep';
+import { HolderOutlined } from '@ant-design/icons';
+
+const handleStyle: CSSProperties = {
+  marginRight: '0.75rem',
+  cursor: 'move',
+}
 
 //#region 列表数据
 
@@ -16,12 +22,10 @@ const columns: ColumnsType<ITableItem> = [
     title: 'ID',
     dataIndex: 'id',
     onCell: (record, rowIndex) => {
-      const attr = {
+      return {
         rowIndex,
-        dragHandler: true,
         record
-      };
-      return attr as IDraggableCellProps;
+      } as IDraggableCellProps;
     }
   },
 
@@ -67,10 +71,11 @@ interface ITableItem {
   icon: string;
   remark: string;
   status: number;
+  _dragHandlerRef?: React.RefObject<HTMLDivElement>;
   children?: ITableItem[];
 }
 
-const defaultItem: ITableItem[] = [
+const defaultItems: ITableItem[] = [
   {
     id: 2,
     pid: 0,
@@ -157,6 +162,20 @@ const defaultItem: ITableItem[] = [
   },
 ]
 
+const findTree = (tree: ITableItem[] | undefined, id: number): ITableItem | undefined => {
+  if (!tree)
+    return;
+
+  for (const item of tree) {
+    if (item.children) {
+      const findItem = findTree(item.children, id);
+      if (findItem)
+        return findItem;
+    }
+    if (item.id === id)
+      return item;
+  };
+}
 
 // 平铺列表转化成  树状数组结构
 const toTree = (data: ITableItem[]) => {
@@ -185,33 +204,36 @@ const toTree = (data: ITableItem[]) => {
 //#endregion
 
 interface IDraggableBodyRowProps extends React.HTMLAttributes<HTMLTableRowElement> {
-  index: number;
-  moveRow: (dragIndex: number, hoverIndex: number) => void;
+  nodeId: number;
+  nodePid?: number;
+  children?: ReactNode[];
+  isParent: (parentId: number, childId: number) => boolean;
+  moveNode: (dragId: number, hoverId: number, movePosition: MovePosition) => void;
 }
 
 interface IDraggableCellProps extends React.HTMLAttributes<HTMLTableCellElement> {
   rowIndex: number;
-  ref: any;
-  dragHandler: boolean;
+  isDragHandler: boolean;
   record: ITableItem;
 }
-interface DragItem {
-  index: number
-  id: string
-  type: string
+
+interface IDragItem {
+  id: number;
+  pid?: number;
+  type: string;
 }
 
 enum MovePosition {
-  Unkown,
-  Before,
-  Child,
-  After
+  unkown,
+  before,
+  child,
+  after
 }
 
-function getMovePosition(ref: React.RefObject<HTMLTableRowElement>, monitor: DropTargetMonitor<DragItem, void>): MovePosition {
+function getMovePosition(ref: React.RefObject<HTMLTableRowElement>, monitor: DropTargetMonitor<IDragItem, void>): MovePosition {
   const hoverBoundingRect = ref.current?.getBoundingClientRect()
   if (!hoverBoundingRect)
-    return MovePosition.Unkown;
+    return MovePosition.unkown;
 
   // 获取水平中线位置
   const hoverMiddleY = (hoverBoundingRect.bottom - hoverBoundingRect.top) / 2
@@ -219,7 +241,7 @@ function getMovePosition(ref: React.RefObject<HTMLTableRowElement>, monitor: Dro
   // Determine mouse position
   const clientOffset = monitor.getClientOffset()
   if (!clientOffset)
-    return MovePosition.Unkown;
+    return MovePosition.unkown;
 
   // Get pixels to the top
   const mouseY = (clientOffset as XYCoord).y - hoverBoundingRect.top
@@ -230,100 +252,49 @@ function getMovePosition(ref: React.RefObject<HTMLTableRowElement>, monitor: Dro
 
   // Dragging downwards
   if (mouseY > hoverMiddleY - 10 && mouseY < hoverMiddleY + 10) {
-    return MovePosition.Child;
+    return MovePosition.child;
   }
   else if (mouseY < hoverMiddleY - 10)
-    return MovePosition.Before;
+    return MovePosition.before;
   else
-    return MovePosition.After;
+    return MovePosition.after;
 }
 
 
 function getDropClassName(moveState: MovePosition) {
   switch (moveState) {
-    case MovePosition.Before:
+    case MovePosition.before:
       return " drop-over-upward";
 
-    case MovePosition.Child:
+    case MovePosition.child:
       return " drop-over-child";
 
-    case MovePosition.After:
+    case MovePosition.after:
       return " drop-over-downward";
 
     default:
       return "";
   }
 }
-const type = 'DraggableBodyRow';
+const dragType = 'DraggableBodyRow';
 
-const DraggableBodyRow = ({
-  index,
-  moveRow,
-  className,
-  style,
-  ...restProps
-}: IDraggableBodyRowProps) => {
-  const ref = useRef<HTMLTableRowElement>(null);
-  const [moveState, setMoveState] = useState(MovePosition.Unkown);
-
-  const [{ isOver }, drop] = useDrop<DragItem, void, { isOver: boolean }>({
-    accept: type,
-    collect: monitor => {
-      return {
-        isOver: monitor.isOver()
-      };
-    },
-    hover: (item, monitor) => {
-      var pos = getMovePosition(ref, monitor);
-      setMoveState(pos);
-    },
-    drop: (item: { index: number }) => {
-      moveRow(item.index, index);
-    },
-  });
-
-  const [, drag, preview] = useDrag({
-    type,
-    item: { index },
-    collect: monitor => ({
-      isDragging: monitor.isDragging(),
-    }),
-  });
-
-  preview(ref)
-  drop(ref);
-  const dragRef = useRef<HTMLDivElement>(null);
-  restProps.children[0].props.record.dragRef = dragRef
-  drag(dragRef)
-
-  const dropClassName = getDropClassName(moveState);
-  return (
-    <tr
-      ref={ref}
-      className={`${className}${isOver ? dropClassName : ''}`}
-      style={style}
-      // style={{ cursor: 'move', ...style }}
-      {...restProps}
-    />
-  );
-};
-
-
-const DragHanlderCell = (props: IDraggableCellProps) => {
+// 单元格
+const DraggableBodyCell = (props: IDraggableCellProps) => {
   const {
-    dragHandler,
+    isDragHandler,
     rowIndex,
     record,
     children,
     ...restProps
   } = props;
 
-  if (dragHandler)
+  if (record?._dragHandlerRef)
     return (
       <td
         {...restProps}
       >
-        <div ref={record.dragRef} className="drag-handle" ></div>
+        <HolderOutlined ref={record._dragHandlerRef} style={handleStyle} />
+        {/* <div ref={record._dragHandlerRef} className="drag-handle" ></div> */}
         {children}
       </td>
     );
@@ -334,17 +305,156 @@ const DragHanlderCell = (props: IDraggableCellProps) => {
     />);
 
 }
+
+// 行
+const DraggableBodyRow = ({
+  nodeId,
+  nodePid,
+  isParent,
+  moveNode,
+  className,
+  style,
+  ...restProps
+}: IDraggableBodyRowProps) => {
+  const ref = useRef<HTMLTableRowElement>(null);
+  const [moveState, setMoveState] = useState(MovePosition.unkown);
+
+  const [{ isOver }, drop] = useDrop<IDragItem, void, { isOver: boolean }>({
+    accept: dragType,
+    collect: monitor => {
+      const { id: dragId } = monitor.getItem() || {};
+      console.log("dragId:", dragId, "hoverId:", nodeId)
+      if (dragId === nodeId) {
+        return { isOver: false };
+      }
+      else {
+        return {
+          isOver: monitor.isOver()
+        };
+      }
+    },
+    hover: (item, monitor) => {
+      setMoveState(getMovePosition(ref, monitor));
+    },
+    canDrop: (item, monitor) => {
+      // 禁止父节点拖到子节点
+      return !isParent(item.id, nodeId)
+    },
+    drop: (item: IDragItem, monitor) => {
+      if (item.id != nodeId) {
+        moveNode(item.id, nodeId, getMovePosition(ref, monitor));
+      }
+    },
+  }, []);
+
+  const [, drag, preview] = useDrag({
+    type: dragType,
+    item: { id: nodeId, pid: nodePid },
+    collect: monitor => ({
+      isDragging: monitor.isDragging(),
+    }),
+  });
+
+  preview(ref)
+  drop(ref);
+  const dragRef = useRef<HTMLDivElement>(null);
+  if (restProps.children?.length && restProps.children?.length > 0) {
+    const child = restProps.children[0] as any;
+    if (child?.props?.record) {
+      child.props.record._dragHandlerRef = dragRef
+      drag(dragRef)
+    }
+  }
+
+  const dropClassName = getDropClassName(moveState);
+  return (
+    <tr
+      ref={ref}
+      className={`${className}${isOver ? dropClassName : ''}`}
+      style={style}
+      {...restProps}
+    />
+  );
+};
+
+
 // 表格
 export default function DragableTreeTable() {
 
-  const [items, setItems] = useState(defaultItem);
+  const [items, setItems] = useState(toTree(defaultItems));
 
   const components = {
     body: {
       row: DraggableBodyRow,
-      cell: DragHanlderCell,
+      cell: DraggableBodyCell,
     },
   };
+
+  const moveNode = useCallback(
+    (dragId: number, hoverId: number, position: MovePosition) => {
+
+      setItems(prevItems => {
+        let nextItems: ITableItem[] = cloneDeep(prevItems);
+
+        const dragNode = findTree(nextItems, dragId);
+        const hoverNode = findTree(nextItems, hoverId);
+
+        if (dragNode && hoverNode) {
+          const dragParent = findTree(nextItems, dragNode.pid);
+          const dragCollection = findTree(nextItems, dragNode.pid)?.children ?? nextItems;
+          const hoverParent = findTree(nextItems, hoverNode.pid);
+
+          let hoverCollection;
+          if (position == MovePosition.child) {
+            if (!hoverNode.children)
+              hoverNode.children = [];
+            hoverCollection = hoverNode.children;
+            dragNode.pid = hoverNode.id;
+          }
+          else {
+            hoverCollection = findTree(nextItems, hoverNode.pid)?.children ?? nextItems;
+            dragNode.pid = hoverNode.pid;
+          }
+
+          // 拖动到其它节点
+          // 从源集合删除拖动的节点
+          dragCollection.splice(dragCollection.indexOf(dragNode), 1);
+
+          // 将拖动节点添加到目标集合
+          let hoverIndex = hoverCollection.indexOf(hoverNode);
+          if (position == MovePosition.after) {
+            hoverIndex += 1;
+          }
+          else if (position == MovePosition.child) {
+            hoverIndex = 0;
+          }
+
+          hoverCollection.splice(hoverIndex, 0, dragNode);
+        }
+
+        return nextItems;
+      });
+
+    },
+    [items],
+  );
+
+  /**
+ * 判断树中parentId和childId的父子关系是否成立。
+ * @param parentId 父节点Id
+ * @param childId  子节点Id
+ * @returns 
+ */
+  const isParent = useCallback(
+    ( parentId: number, childId: number) => {
+      const parent = findTree(items, parentId);
+      if (!parent)
+        return false;
+
+      const child = findTree(parent.children, childId)
+      return !!child;
+    },
+    [items]);
 
   const moveRow = useCallback(
     (dragIndex: number, hoverIndex: number) => {
@@ -358,8 +468,7 @@ export default function DragableTreeTable() {
         }),
       );
     },
-    [items],
-  );
+    [items]);
 
 
   return (
@@ -367,12 +476,14 @@ export default function DragableTreeTable() {
       <Table<ITableItem>
         rowKey="id"
         columns={columns}
-        dataSource={toTree(items)}
+        dataSource={items}
         components={components}
         onRow={(record, index) => {
           const attr = {
-            index,
-            moveRow,
+            nodeId: record.id,
+            nodePid: record?.pid,
+            isParent,
+            moveNode
           };
           return attr as IDraggableBodyRowProps;
         }}

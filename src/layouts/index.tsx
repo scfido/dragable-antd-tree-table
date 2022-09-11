@@ -9,10 +9,10 @@ export default function Layout() {
           <Link to="/">Home</Link>
         </li>
         <li>
-          <Link to="/docs">Docs</Link>
+          <Link to="/DragableTreeTable">可拖动树表</Link>
         </li>
         <li>
-          <a href="https://github.com/umijs/umi">Github</a>
+          <a href="https://github.com/scfido/dragableTreeTable">Github</a>
         </li>
       </ul>
       <Outlet />
