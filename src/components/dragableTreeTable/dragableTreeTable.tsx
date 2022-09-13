@@ -1,11 +1,9 @@
 import React, { CSSProperties, ReactNode, useCallback, useRef, useState } from 'react'
-import { Table } from 'antd';
+import { Table, TableProps } from 'antd';
 import type { XYCoord, Identifier } from 'dnd-core';
 import { DndProvider, DropTargetMonitor, useDrag, useDrop } from 'react-dnd';
 import { HTML5Backend } from 'react-dnd-html5-backend';
-import update from 'immutability-helper';
-import "antd/dist/antd.css";
-import "./DragableTreeTable.css";
+import "./dragableTreeTable.css";
 import { ColumnsType } from 'antd/es/table';
 import cloneDeep from 'lodash.clonedeep';
 import { HolderOutlined } from '@ant-design/icons';
@@ -17,152 +15,7 @@ const handleStyle: CSSProperties = {
 
 //#region 列表数据
 
-const columns: ColumnsType<ITableItem> = [
-  {
-    title: 'ID',
-    dataIndex: 'id',
-    onCell: (record, rowIndex) => {
-      return {
-        rowIndex,
-        record
-      } as IDraggableCellProps;
-    }
-  },
-
-  // {
-  //   title: '排序',
-  //   dataIndex: 'sort',
-  // },
-  {
-    title: '菜单名称',
-    dataIndex: 'name',
-    //   className: 'drag-visible',
-  },
-  {
-    title: '路由',
-    dataIndex: 'path',
-  },
-  {
-    title: '真实路径',
-    dataIndex: 'component',
-  },
-  {
-    title: '图标',
-    dataIndex: 'icon',
-  },
-  {
-    title: '备注',
-    dataIndex: 'remark',
-  },
-  {
-    title: '状态',
-    dataIndex: 'status',
-  },
-];
-
-interface ITableItem {
-  id: number;
-  pid: number;
-  orderNum: number;
-  menuType: number;
-  name: string;
-  path: string;
-  component: string;
-  icon: string;
-  remark: string;
-  status: number;
-  _dragHandlerRef?: React.RefObject<HTMLDivElement>;
-  children?: ITableItem[];
-}
-
-const defaultItems: ITableItem[] = [
-  {
-    id: 2,
-    pid: 0,
-    orderNum: 1,
-    menuType: 1,
-    name: '父级菜单1',
-    path: "/xxxxxxxxxxx",
-    component: './xxxxxxxxxxx',
-    icon: 'table',
-    remark: '父级菜单1',
-    status: 0,
-  },
-  {
-    id: 3,
-    pid: 0,
-    orderNum: 2,
-    menuType: 1,
-    name: '父级菜单2',
-    path: "/xxxxxxxxxxx",
-    component: '',
-    icon: 'crown',
-    remark: '父级菜单2',
-    status: 0,
-  },
-  {
-    id: 42,
-    pid: 0,
-    orderNum: 41,
-    menuType: 1,
-    name: '父级菜单3',
-    path: "/xxxxxxxxxxx",
-    component: './xxxxxxxxxxx',
-    icon: 'table',
-    remark: '',
-    status: 0,
-  },
-  {
-    id: 4,
-    pid: 3,
-    orderNum: 3,
-    menuType: 1,
-    name: '2的子菜单1',
-    path: "/xxxxxxxxxxx/xxxxxx",
-    component: './xxxxxxxxxxx/xxxxxx',
-    icon: '',
-    remark: '',
-    status: 0,
-  },
-  {
-    id: 11,
-    pid: 3,
-    orderNum: 10,
-    menuType: 1,
-    name: '2的子菜单2',
-    path: "/xxxxxxxxxxx/xxxxxx",
-    component: './xxxxxxxxxxx/xxxxxx',
-    icon: '',
-    remark: '',
-    status: 1,
-  },
-  {
-    id: 20,
-    pid: 3,
-    orderNum: 10,
-    menuType: 1,
-    name: '2的子菜单3',
-    path: "./xxxxxxxxxxx/xxxxxx",
-    component: './xxxxxxxxxxx/xxxxxx',
-    icon: '',
-    remark: '',
-    status: 1,
-  },
-  {
-    id: 50,
-    pid: 20,
-    orderNum: 10,
-    menuType: 1,
-    name: '子菜单3的子菜单1',
-    path: "/xxxxxxxxxxx/xxxxxx",
-    component: './xxxxxxxxxxx/xxxxxx',
-    icon: '',
-    remark: '',
-    status: 1,
-  },
-]
-
-const findTree = (tree: ITableItem[] | undefined, id: number): ITableItem | undefined => {
+const findTree = <TKey,>(tree: readonly IDraggableTableItem<TKey>[] | undefined, id: TKey): IDraggableTableItem<TKey> | undefined => {
   if (!tree)
     return;
 
@@ -177,60 +30,42 @@ const findTree = (tree: ITableItem[] | undefined, id: number): ITableItem | unde
   };
 }
 
-// 平铺列表转化成  树状数组结构
-const toTree = (data: ITableItem[]) => {
-  let result: ITableItem[] = []
-  if (!Array.isArray(data)) {
-    return result
-  }
-  data.forEach(item => {
-    delete item.children;
-  });
-
-  let map: Record<number, ITableItem> = {};
-  data.forEach(item => {
-    map[item.id] = item;
-  });
-  data.forEach(item => {
-    let parent = map[item.pid];
-    if (parent) {
-      (parent.children || (parent.children = [])).push(item);
-    } else {
-      result.push(item);
-    }
-  });
-  return result;
-}
 //#endregion
 
-interface IDraggableBodyRowProps extends React.HTMLAttributes<HTMLTableRowElement> {
-  nodeId: number;
-  nodePid?: number;
+
+export interface IDraggableBodyRowProps<TKey> extends React.HTMLAttributes<HTMLTableRowElement> {
+  nodeId: TKey;
+  nodePid?: TKey;
   children?: ReactNode[];
-  isParent: (parentId: number, childId: number) => boolean;
-  moveNode: (dragId: number, hoverId: number, movePosition: MovePosition) => void;
+  isParent: (parentId: TKey, childId: TKey) => boolean;
+  moveNode: (dragId: TKey, hoverId: TKey, movePosition: MovePosition) => void;
 }
 
-interface IDraggableCellProps extends React.HTMLAttributes<HTMLTableCellElement> {
+export interface IDraggableCellProps<T> extends React.HTMLAttributes<HTMLTableCellElement> {
   rowIndex: number;
-  isDragHandler: boolean;
-  record: ITableItem;
+  record: T;
 }
 
-interface IDragItem {
-  id: number;
-  pid?: number;
+export interface IDraggableTableItem<TKey> {
+  id: TKey;
+  pid?: TKey;
+  children?: IDraggableTableItem<TKey>[]
+}
+
+interface IDragItem<TKey> {
+  id: TKey;
+  pid?: TKey;
   type: string;
 }
 
-enum MovePosition {
+export enum MovePosition {
   unkown,
   before,
   child,
   after
 }
 
-function getMovePosition(ref: React.RefObject<HTMLTableRowElement>, monitor: DropTargetMonitor<IDragItem, void>): MovePosition {
+function getMovePosition<TKey>(ref: React.RefObject<HTMLTableRowElement>, monitor: DropTargetMonitor<IDragItem<TKey>, void>): MovePosition {
   const hoverBoundingRect = ref.current?.getBoundingClientRect()
   if (!hoverBoundingRect)
     return MovePosition.unkown;
@@ -245,10 +80,6 @@ function getMovePosition(ref: React.RefObject<HTMLTableRowElement>, monitor: Dro
 
   // Get pixels to the top
   const mouseY = (clientOffset as XYCoord).y - hoverBoundingRect.top
-
-  // Only perform the move when the mouse has crossed half of the items height
-  // When dragging downwards, only move when the cursor is below 50%
-  // When dragging upwards, only move when the cursor is above 50%
 
   // Dragging downwards
   if (mouseY > hoverMiddleY - 10 && mouseY < hoverMiddleY + 10) {
@@ -279,22 +110,22 @@ function getDropClassName(moveState: MovePosition) {
 const dragType = 'DraggableBodyRow';
 
 // 单元格
-const DraggableBodyCell = (props: IDraggableCellProps) => {
+const DraggableBodyCell = <T,>(props: IDraggableCellProps<T>) => {
   const {
-    isDragHandler,
     rowIndex,
     record,
     children,
     ...restProps
   } = props;
 
-  if (record?._dragHandlerRef)
+  // 给单元格添加拖拽手柄
+  const handlerRef = (record as { _dragHandlerRef?: React.Ref<HTMLSpanElement> })?._dragHandlerRef;
+  if (handlerRef)
     return (
       <td
         {...restProps}
       >
-        <HolderOutlined ref={record._dragHandlerRef} style={handleStyle} />
-        {/* <div ref={record._dragHandlerRef} className="drag-handle" ></div> */}
+        <HolderOutlined ref={handlerRef} style={handleStyle} />
         {children}
       </td>
     );
@@ -307,7 +138,7 @@ const DraggableBodyCell = (props: IDraggableCellProps) => {
 }
 
 // 行
-const DraggableBodyRow = ({
+const DraggableBodyRow = <TKey,>({
   nodeId,
   nodePid,
   isParent,
@@ -315,21 +146,21 @@ const DraggableBodyRow = ({
   className,
   style,
   ...restProps
-}: IDraggableBodyRowProps) => {
+}: IDraggableBodyRowProps<TKey>) => {
   const ref = useRef<HTMLTableRowElement>(null);
   const [moveState, setMoveState] = useState(MovePosition.unkown);
 
-  const [{ isOver }, drop] = useDrop<IDragItem, void, { isOver: boolean }>({
+  const [{ isOver }, drop] = useDrop<IDragItem<TKey>, void, { isOver: boolean }>({
     accept: dragType,
     collect: monitor => {
       const { id: dragId } = monitor.getItem() || {};
-      console.log("dragId:", dragId, "hoverId:", nodeId)
       if (dragId === nodeId) {
         return { isOver: false };
       }
       else {
+        const dragId = monitor.getItem()?.id;
         return {
-          isOver: monitor.isOver()
+          isOver: monitor.isOver() && !isParent(dragId, nodeId)
         };
       }
     },
@@ -338,9 +169,13 @@ const DraggableBodyRow = ({
     },
     canDrop: (item, monitor) => {
       // 禁止父节点拖到子节点
+      if (item.id == nodeId)
+        return false;
+
+      console.log("canDrop:", !isParent(item.id, nodeId), "pid:", item.id, "id:", nodeId)
       return !isParent(item.id, nodeId)
     },
-    drop: (item: IDragItem, monitor) => {
+    drop: (item: IDragItem<TKey>, monitor) => {
       if (item.id != nodeId) {
         moveNode(item.id, nodeId, getMovePosition(ref, monitor));
       }
@@ -377,12 +212,19 @@ const DraggableBodyRow = ({
   );
 };
 
+export interface IDragableTreeTableProps<T, TKey>
+  extends TableProps<T> {
+  data?: T[];
+  onNodeMoving?: (dragId: TKey, hoverId: TKey, movePosition: MovePosition) => boolean;
+  onNodeMoved?: (dragId: TKey, hoverId: TKey, movePosition: MovePosition) => void;
+}
 
 // 表格
-export default function DragableTreeTable() {
+export default function DragableTreeTable<T extends IDraggableTableItem<TKey>, TKey>(props: IDragableTreeTableProps<T, TKey>) {
 
-  const [items, setItems] = useState(toTree(defaultItems));
-
+  const { dataSource, onNodeMoving, onNodeMoved, columns, ...restProps } = props;
+  const [items, setItems] = useState(dataSource);
+  const itemsRef = useRef(items); // 确保拖动操作的闭包中拿到最新的items
   const components = {
     body: {
       row: DraggableBodyRow,
@@ -391,18 +233,21 @@ export default function DragableTreeTable() {
   };
 
   const moveNode = useCallback(
-    (dragId: number, hoverId: number, position: MovePosition) => {
+    (dragId: TKey, hoverId: TKey, position: MovePosition) => {
+      if (onNodeMoving && onNodeMoving(dragId, hoverId, position) !== true)
+        return;
 
       setItems(prevItems => {
-        let nextItems: ITableItem[] = cloneDeep(prevItems);
+        if (!prevItems)
+          return prevItems;
+
+        let nextItems: T[] = cloneDeep(prevItems) as T[];
 
         const dragNode = findTree(nextItems, dragId);
         const hoverNode = findTree(nextItems, hoverId);
 
         if (dragNode && hoverNode) {
-          const dragParent = findTree(nextItems, dragNode.pid);
           const dragCollection = findTree(nextItems, dragNode.pid)?.children ?? nextItems;
-          const hoverParent = findTree(nextItems, hoverNode.pid);
 
           let hoverCollection;
           if (position == MovePosition.child) {
@@ -432,11 +277,13 @@ export default function DragableTreeTable() {
           hoverCollection.splice(hoverIndex, 0, dragNode);
         }
 
+        itemsRef.current = nextItems;
         return nextItems;
       });
 
+      onNodeMoved?.(dragId, hoverId, position)
     },
-    [items],
+    [],
   );
 
   /**
@@ -445,35 +292,21 @@ export default function DragableTreeTable() {
  * @param childId  子节点Id
  * @returns 
  */
+  
   const isParent = useCallback(
-    ( parentId: number, childId: number) => {
-      const parent = findTree(items, parentId);
+    (parentId: TKey, childId: TKey) => {
+      const parent = findTree(itemsRef.current, parentId);
       if (!parent)
         return false;
 
       const child = findTree(parent.children, childId)
       return !!child;
     },
-    [items]);
-
-  const moveRow = useCallback(
-    (dragIndex: number, hoverIndex: number) => {
-      const dragRow = items[dragIndex];
-      setItems(
-        update(items, {
-          $splice: [
-            [dragIndex, 1],
-            [hoverIndex, 0, dragRow],
-          ],
-        }),
-      );
-    },
-    [items]);
-
+    []);
 
   return (
     <DndProvider backend={HTML5Backend}>
-      <Table<ITableItem>
+      <Table<T>
         rowKey="id"
         columns={columns}
         dataSource={items}
@@ -485,9 +318,9 @@ export default function DragableTreeTable() {
             isParent,
             moveNode
           };
-          return attr as IDraggableBodyRowProps;
+          return attr as IDraggableBodyRowProps<TKey>;
         }}
-
+        {...restProps}
       />
     </DndProvider>
 
